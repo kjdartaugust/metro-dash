@@ -358,7 +358,7 @@
 
   // ================= GAME =================
   const LANES=[-1,0,1];
-  let dist=0, runCoins=0, speed=0, baseSpeed=9, obstacles=[], parts=[], scroll=0, shake=0, flash=0, spawnZ=0;
+  let dist=0, runCoins=0, speed=0, baseSpeed=13, obstacles=[], parts=[], scroll=0, shake=0, flash=0, spawnZ=0;
   let runState='menu', runsThisRun=0;
   const P={lane:0,px:0,y:0,vy:0,roll:0,run:0, magnet:0,jet:0,mult:0,sneak:0, inv:0, dead:false};
   let revives=0, milestone=0;
@@ -385,8 +385,8 @@
   }
 
   function move(d){ const t=Math.max(0,Math.min(2,(P.lane+1)+d)); if(t!==P.lane+1){ P.lane=t-1; beep(620,.05,'triangle',.03,80); } }
-  function jump(){ if(P.jet>0) return; if(P.y<=0.01&&P.roll<=0){ P.vy=P.sneak>0?1.4:1.0; sfx.jump(); missionProgress('jump',1); } }
-  function roll(){ if(P.jet>0) return; if(P.y>0.01){ P.vy=-1.8; } if(P.roll<=0){ P.roll=0.55; sfx.roll(); } }
+  function jump(){ if(P.jet>0) return; if(P.y<=0.01&&P.roll<=0){ P.vy=P.sneak>0?2.15:1.75; sfx.jump(); missionProgress('jump',1); } }
+  function roll(){ if(P.jet>0) return; if(P.y>0.01){ P.vy=-3.0; } if(P.roll<=0){ P.roll=0.55; sfx.roll(); } }
   function grabPower(k){ P[k]=pwDur(k); sfx.power(); flash=.3; missionProgress('power',1);
     toast(POWERS[k].emoji+' '+POWERS[k].name);
     if(k==='jet'){ P.y=0; P.vy=0; for(let i=0;i<14;i++) addObj('coin',P.lane,4+i*0.9); } }
@@ -408,7 +408,7 @@
     if(Math.abs(dx)>Math.abs(dy)) move(dx>0?1:-1); else { if(dy<0)jump(); else roll(); } });
 
   function startGame(){ try{ac().resume();}catch(e){}
-    dist=0; runCoins=0; speed=baseSpeed; obstacles=[]; parts=[]; scroll=0; shake=0; flash=0; spawnZ=16;
+    dist=0; runCoins=0; speed=baseSpeed; obstacles=[]; parts=[]; scroll=0; shake=0; flash=0; spawnZ=24;
     P.lane=0;P.px=0;P.y=0;P.vy=0;P.roll=0;P.run=0;P.magnet=0;P.jet=0;P.mult=0;P.sneak=0;P.inv=1.2;P.dead=false;
     revives=0; milestone=0;
     runState='play'; show('game'); missionProgress('runs',1); musicOn(); syncHudRun();
@@ -433,7 +433,7 @@
   function continueRun(){
     const cost=reviveCost(); if(DB.coins<cost){ toast('Not enough coins'); return; }
     DB.coins-=cost; save(); refreshWallet(); revives++;
-    obstacles=obstacles.filter(o=>o.z>13 || o.kind==='coin'); // clear the wall in front
+    obstacles=obstacles.filter(o=>o.z>18 || o.kind==='coin'); // clear the wall in front
     P.dead=false; P.y=0; P.vy=0; P.roll=0; P.inv=3;
     runState='play'; show('game'); musicOn(); sfx.buy();
   }
@@ -449,9 +449,9 @@
   }
 
   function update(dt){
-    speed=baseSpeed+dist*0.006; const dz=speed*dt;
+    speed=baseSpeed+dist*0.010; const dz=speed*dt;
     dist+=dz*1.4; scroll=(scroll+dz)%2; P.run+=dz;
-    P.px+=(P.lane-P.px)*Math.min(1,dt*14);
+    P.px+=(P.lane-P.px)*Math.min(1,dt*19);
     // timers
     ['magnet','jet','mult','sneak','inv'].forEach(k=>{ if(P[k]>0) P[k]-=dt; });
     // distance milestones
@@ -462,7 +462,7 @@
     if(P.roll>0) P.roll-=dt;
 
     for(const o of obstacles) o.z-=dz;
-    spawnZ-=dz; if(spawnZ<=0){ spawnRow(18); spawnZ=Math.max(2.0,4.0-dist*0.0012); }
+    spawnZ-=dz; if(spawnZ<=0){ spawnRow(26); spawnZ=Math.max(3.4,5.6-dist*0.0012); }
 
     const plane=Math.round(P.px);
     for(const o of obstacles){
