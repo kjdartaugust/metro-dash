@@ -1,0 +1,8 @@
+{
+  "name": "METRO DASH",
+  "short_name": "METRO DASH",
+  "description": "A bright endless runner — dodge trains, grab coins, unlock characters and power-ups.",
+  "start_url": "./","scope": "./","display": "standalone","orientation": "portrait",
+  "background_color": "#7fd0ff","theme_color": "#3aa0ff",
+  "icons": [ { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" } ]
+}
