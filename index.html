@@ -164,6 +164,7 @@
       <div class="box"><b id="oCoins">0</b><span>COINS</span></div>
     </div>
     <div class="charcard" id="oBest"></div>
+    <button class="play" id="contBtn" style="display:none;background:linear-gradient(180deg,#33c7ff,#2d8cf0);box-shadow:0 7px 0 #1b6fd6,0 12px 20px rgba(0,0,0,.25)">CONTINUE</button>
     <button class="play" id="againBtn" style="background:linear-gradient(180deg,#4bd15f,#2fae43)">RUN AGAIN</button>
     <button class="back" id="homeBtn" style="box-shadow:0 4px 0 #cfe0f5">Home</button>
   </div>
@@ -255,6 +256,15 @@
   const sfx={coin:()=>beep(1150,.06,'square',.04,180),jump:()=>beep(500,.13,'sine',.08,240),
     roll:()=>beep(300,.1,'sawtooth',.06,-100),power:()=>{beep(600,.1,'square',.09,200);setTimeout(()=>beep(900,.12,'square',.09,240),90);},
     crash:()=>{beep(160,.4,'sawtooth',.16,-100);},buy:()=>{beep(700,.1,'sine',.09,120);setTimeout(()=>beep(1050,.14,'sine',.09,120),100);}};
+  // upbeat background music (major-key arp + bass, lookahead scheduler)
+  const ARP=[0,4,7,12,7,4,7,4], BASS=[0,5,3,7];
+  let mNext=0,mStep=0;
+  function music(){ if(muted||!AC) return; const a=AC;
+    while(mNext < a.currentTime+0.15){ const i=mStep;
+      if(i%4===0) beep(98*Math.pow(2,BASS[(i/4)%BASS.length]/12),0.40,'triangle',0.045,0);
+      beep(392*Math.pow(2,ARP[i%ARP.length]/12),0.13,'sine',0.022,0);
+      mNext+=0.22; mStep=(mStep+1)%64; } }
+  function musicOn(){ if(!muted){ try{ mNext=ac().currentTime; mStep=0; }catch(e){} } }
 
   // ---------- screen router ----------
   const screens={home:el('home'),shop:el('shop'),miss:el('miss'),over:el('over')};
@@ -275,8 +285,9 @@
   el('navMiss').onclick=()=>{ buildMissions(); show('miss'); };
   el('shopBack').onclick=()=>{ refreshWallet(); show('home'); };
   el('missBack').onclick=()=>{ refreshWallet(); show('home'); };
-  el('homeBtn').onclick=()=>{ refreshWallet(); show('home'); };
-  el('againBtn').onclick=()=>startGame();
+  el('homeBtn').onclick=()=>{ bankRun(); refreshWallet(); show('home'); };
+  el('againBtn').onclick=()=>{ bankRun(); startGame(); };
+  el('contBtn').onclick=()=>continueRun();
   el('gearBtn').onclick=el('overGear').onclick=()=>{ muted=!muted; localStorage.setItem('md_muted',muted?'1':'0'); toast(muted?'Sound off':'Sound on'); };
   el('muteBtn').onclick=()=>{ muted=!muted; localStorage.setItem('md_muted',muted?'1':'0'); el('muteBtn').textContent=muted?'🔇':'🔊'; };
   el('pauseBtn').onclick=()=>togglePause();
@@ -349,8 +360,8 @@
   const LANES=[-1,0,1];
   let dist=0, runCoins=0, speed=0, baseSpeed=9, obstacles=[], parts=[], scroll=0, shake=0, flash=0, spawnZ=0;
   let runState='menu', runsThisRun=0;
-  const P={lane:0,px:0,y:0,vy:0,roll:0,run:0, magnet:0,jet:0,mult:0,sneak:0, dead:false};
-  let pausedFrom=null;
+  const P={lane:0,px:0,y:0,vy:0,roll:0,run:0, magnet:0,jet:0,mult:0,sneak:0, inv:0, dead:false};
+  let revives=0, milestone=0;
 
   const HORIZON=()=>H*0.30, GROUND=()=>H*0.86, LANEPX=()=>Math.min(W*0.24,140);
   const scaleAt=z=>1/(1+z*0.10);
@@ -377,7 +388,8 @@
   function jump(){ if(P.jet>0) return; if(P.y<=0.01&&P.roll<=0){ P.vy=P.sneak>0?1.4:1.0; sfx.jump(); missionProgress('jump',1); } }
   function roll(){ if(P.jet>0) return; if(P.y>0.01){ P.vy=-1.8; } if(P.roll<=0){ P.roll=0.55; sfx.roll(); } }
   function grabPower(k){ P[k]=pwDur(k); sfx.power(); flash=.3; missionProgress('power',1);
-    toast(POWERS[k].emoji+' '+POWERS[k].name); if(k==='jet'){ P.y=0; P.vy=0; } }
+    toast(POWERS[k].emoji+' '+POWERS[k].name);
+    if(k==='jet'){ P.y=0; P.vy=0; for(let i=0;i<14;i++) addObj('coin',P.lane,4+i*0.9); } }
 
   // input
   const keys={}; let pd=null;
@@ -397,20 +409,33 @@
 
   function startGame(){ try{ac().resume();}catch(e){}
     dist=0; runCoins=0; speed=baseSpeed; obstacles=[]; parts=[]; scroll=0; shake=0; flash=0; spawnZ=16;
-    P.lane=0;P.px=0;P.y=0;P.vy=0;P.roll=0;P.run=0;P.magnet=0;P.jet=0;P.mult=0;P.sneak=0;P.dead=false;
-    runState='play'; show('game'); missionProgress('runs',1); syncHudRun();
+    P.lane=0;P.px=0;P.y=0;P.vy=0;P.roll=0;P.run=0;P.magnet=0;P.jet=0;P.mult=0;P.sneak=0;P.inv=1.2;P.dead=false;
+    revives=0; milestone=0;
+    runState='play'; show('game'); missionProgress('runs',1); musicOn(); syncHudRun();
   }
-  function togglePause(){ if(runState==='play'){ runState='pause'; } else if(runState==='pause'){ runState='play'; } }
+  function togglePause(){ if(runState==='play'){ runState='pause'; } else if(runState==='pause'){ runState='play'; musicOn(); } }
+  const reviveCost=()=>150*(revives+1);
   function endRun(){
     runState='over'; sfx.crash(); shake=20; flash=.8;
-    DB.coins+=runCoins;
     const d=Math.floor(dist);
-    if(d>DB.high) DB.high=d;
-    if(runCoins>DB.top) DB.top=runCoins;
-    missionProgress('dist',d); save(); refreshWallet();
     el('oScore').textContent=d; el('oCoins').textContent=runCoins;
-    const c=getChar(); el('oBest').innerHTML=`<div class="av" style="width:44px;height:44px;border-radius:12px;background:${c.jacket};display:grid;place-items:center;font-size:26px">${c.emoji}</div><div><div class="nm">Banked ${runCoins} ◎</div><div class="sc">Total ${DB.coins.toLocaleString()} ◎</div></div>`;
+    const c=getChar(); el('oBest').innerHTML=`<div class="av" style="width:44px;height:44px;border-radius:12px;background:${c.jacket};display:grid;place-items:center;font-size:26px">${c.emoji}</div><div><div class="nm">${runCoins} ◎ this run</div><div class="sc">Wallet ${DB.coins.toLocaleString()} ◎</div></div>`;
+    const canRevive = revives<3 && DB.coins>=reviveCost();
+    el('contBtn').style.display = canRevive?'block':'none';
+    if(canRevive) el('contBtn').innerHTML = `CONTINUE &nbsp;<span class="coin"></span> ${reviveCost()}`;
     setTimeout(()=>show('over'),350);
+  }
+  function bankRun(){ // called when leaving the over screen for real
+    DB.coins+=runCoins; const d=Math.floor(dist);
+    if(d>DB.high) DB.high=d; if(runCoins>DB.top) DB.top=runCoins;
+    missionProgress('dist',d); save(); refreshWallet(); runCoins=0;
+  }
+  function continueRun(){
+    const cost=reviveCost(); if(DB.coins<cost){ toast('Not enough coins'); return; }
+    DB.coins-=cost; save(); refreshWallet(); revives++;
+    obstacles=obstacles.filter(o=>o.z>13 || o.kind==='coin'); // clear the wall in front
+    P.dead=false; P.y=0; P.vy=0; P.roll=0; P.inv=3;
+    runState='play'; show('game'); musicOn(); sfx.buy();
   }
   function syncHudRun(){ el('hScore').textContent=Math.floor(dist); el('hCoins').textContent=runCoins;
     el('hMult').style.display=P.mult>0?'block':'none'; }
@@ -418,7 +443,7 @@
   // ---------- loop ----------
   let last=performance.now();
   function loop(now){ let dt=(now-last)/1000; last=now; dt=Math.min(dt,.05);
-    if(runState==='play') update(dt);
+    if(runState==='play'){ update(dt); music(); }
     render(dt, runState==='play'||runState==='pause'||runState==='over');
     requestAnimationFrame(loop);
   }
@@ -428,7 +453,9 @@
     dist+=dz*1.4; scroll=(scroll+dz)%2; P.run+=dz;
     P.px+=(P.lane-P.px)*Math.min(1,dt*14);
     // timers
-    ['magnet','jet','mult','sneak'].forEach(k=>{ if(P[k]>0) P[k]-=dt; });
+    ['magnet','jet','mult','sneak','inv'].forEach(k=>{ if(P[k]>0) P[k]-=dt; });
+    // distance milestones
+    if(dist>=milestone+500){ milestone+=500; flash=Math.max(flash,.18); toast(milestone+'m! keep going'); }
     // jet: fly high & invincible
     if(P.jet>0){ P.y+=(3.2-P.y)*Math.min(1,dt*5); P.vy=0; }
     else { if(P.y>0||P.vy!==0){ P.vy-=(P.sneak>0?2.9:3.4)*dt; P.y+=P.vy*dt*2.2; if(P.y<=0){P.y=0;P.vy=0;} } }
@@ -449,10 +476,15 @@
       if(o.kind==='coin'){ if(!o.got&&same&&Math.abs(o.z)<0.5&&P.y<1.6) collectCoin(o); }
       else if(POWERS[o.kind]){ if(!o.got&&same&&Math.abs(o.z)<0.6){ o.got=true;o.done=true; grabPower(o.kind); } }
       else if(band&&same&&!o.hit){
-        if(P.jet>0){ o.hit=true; continue; } // fly over everything
+        if(P.jet>0||P.inv>0){ o.hit=true; continue; } // fly over / invincible
         const jumping=P.y>0.35, rolling=P.roll>0; let crash=false;
         if(o.kind==='train') crash=true; else if(o.kind==='block') crash=!jumping; else if(o.kind==='gate') crash=!rolling;
         if(crash){ o.hit=true; P.dead=true; endRun(); return; } else o.hit=true;
+      }
+      // near-miss: obstacle whips past in the neighbouring lane
+      else if((o.kind==='train'||o.kind==='block'||o.kind==='gate') && !o.near && !o.hit){
+        const adj=Math.abs(o.lane-plane);
+        if(o.z<0.35 && o.z>-0.25 && adj>0.6 && adj<1.45){ o.near=true; dist+=4; runCoins+=1; shake=Math.max(shake,3); }
       }
     }
     obstacles=obstacles.filter(o=>!o.done);
@@ -475,6 +507,10 @@
       for(const p of parts){ ctx.globalAlpha=Math.max(0,p.life/.45); ctx.fillStyle=`hsl(${p.hue} 100% 60%)`;
         ctx.beginPath(); ctx.arc(p.x,p.y,3,0,6.283); ctx.fill(); }
       ctx.globalAlpha=1;
+      // speed lines when fast
+      if(runState==='play' && speed>15){ ctx.strokeStyle=`rgba(255,255,255,${Math.min(.22,(speed-15)/70)})`; ctx.lineWidth=2;
+        for(let i=0;i<7;i++){ const a=Math.random()*6.283, r0=H*0.16, r1=r0+26+Math.random()*44;
+          ctx.beginPath(); ctx.moveTo(W/2+Math.cos(a)*r0,H*0.5+Math.sin(a)*r0); ctx.lineTo(W/2+Math.cos(a)*r1,H*0.5+Math.sin(a)*r1); ctx.stroke(); } }
     }
     ctx.restore();
     if(flash>0){ ctx.fillStyle=`rgba(255,90,90,${flash*0.4})`; ctx.fillRect(0,0,W,H); }
@@ -549,6 +585,13 @@
     const bodyH=rolling?unit*0.32:unit*0.52, w=unit*0.3;
     // shadow
     ctx.fillStyle='rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(x, projY(0,0)+3, w*1.1*(1-P.y*0.25), w*0.24,0,0,6.283); ctx.fill();
+    // magnet pulse ring
+    if(P.magnet>0){ const rr=unit*(0.85+0.12*Math.sin(performance.now()/110));
+      ctx.strokeStyle=`rgba(255,90,90,${0.35+0.2*Math.sin(performance.now()/110)})`; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(x, yb-bodyH*0.4, rr, 0, 6.283); ctx.stroke(); }
+    // invincibility blink
+    const blink = P.inv>0 && Math.floor(P.inv*12)%2;
+    ctx.globalAlpha = blink?0.45:1;
     ctx.save(); ctx.translate(x,yb);
     // board
     ctx.fillStyle=b.color; roundRect(-w*1.25,-4,w*2.5,10,5); ctx.fill();
@@ -573,6 +616,7 @@
     // face
     ctx.fillStyle='#1c2b46'; ctx.beginPath(); ctx.arc(w*0.2,hy,w*0.09,0,6.283); ctx.fill();
     ctx.restore();
+    ctx.globalAlpha=1;
     // jet flame
     if(P.jet>0){ ctx.fillStyle=`rgba(255,150,40,${.6+Math.random()*.4})`; ctx.beginPath();
       ctx.moveTo(x-8,yb); ctx.lineTo(x,yb+26+Math.random()*16); ctx.lineTo(x+8,yb); ctx.fill();
