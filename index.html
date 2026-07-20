@@ -358,7 +358,7 @@
 
   // ================= GAME =================
   const LANES=[-1,0,1];
-  let dist=0, runCoins=0, speed=0, baseSpeed=13, obstacles=[], parts=[], scroll=0, shake=0, flash=0, spawnZ=0;
+  let dist=0, runCoins=0, speed=0, baseSpeed=10, obstacles=[], parts=[], scroll=0, shake=0, flash=0, spawnZ=0;
   let scen=[], scenZ=0;
   let runState='menu', runsThisRun=0;
   const P={lane:0,px:0,y:0,vy:0,roll:0,run:0,buf:0, magnet:0,jet:0,mult:0,sneak:0, inv:0, dead:false};
@@ -384,18 +384,19 @@
     return 0; }
   function dust(n,yUp){ const x=projX(0,P.px), y=projY(0,yUp||P.y);
     for(let i=0;i<n;i++) parts.push({x:x+(Math.random()-.5)*30,y,vx:(Math.random()-.5)*140,vy:-Math.random()*90-20,life:.4,col:'#cfc2a8'}); }
-  function spawnRow(z){
+  function spawnRow(z,dist){
+    const easy = dist<150;                                 // gentle on-ramp: no trains/double-blocks at first
     const r=Math.random();
-    if(r<0.06){ const k=['magnet','jet','mult','sneak'][Math.floor(Math.random()*4)]; addObj(k,LANES[Math.floor(Math.random()*3)],z); return; }
-    if(r<0.26){ const bad=LANES[Math.floor(Math.random()*3)]; addObj('train',bad,z);
+    if(r<0.08){ const k=['magnet','jet','mult','sneak'][Math.floor(Math.random()*4)]; addObj(k,LANES[Math.floor(Math.random()*3)],z); return; }
+    if(!easy && r<0.24){ const bad=LANES[Math.floor(Math.random()*3)]; addObj('train',bad,z);
       const safe=LANES.filter(l=>l!==bad)[Math.floor(Math.random()*2)]; for(let i=0;i<4;i++) addObj('coin',safe,z+i*0.7);
       const tr=obstacles[obstacles.length-1], rh=roofH();
       if(tr&&tr.kind==='train'&&tr.z===z&&tr.lane===bad)
         for(let i=0;i<Math.floor(tr.zlen/0.75);i++) addObj('coin',bad,z+0.5+i*0.75,rh+0.55); }   // roof route pays
-    else if(r<0.48){ const n=Math.random()<.5?1:2; const ls=[...LANES].sort(()=>Math.random()-.5).slice(0,n);
+    else if(r<0.46){ const n=(!easy&&Math.random()<.3)?2:1; const ls=[...LANES].sort(()=>Math.random()-.5).slice(0,n);
       ls.forEach(l=>addObj('block',l,z)); const safe=LANES.find(l=>!ls.includes(l)); if(safe!==undefined)addObj('coin',safe,z); }
-    else if(r<0.62){ LANES.forEach(l=>addObj('gate',l,z)); }
-    else if(r<0.82){ const l=LANES[Math.floor(Math.random()*3)]; addObj('block',l,z);
+    else if(r<0.58){ LANES.forEach(l=>addObj('gate',l,z)); }
+    else if(r<0.80){ const l=LANES[Math.floor(Math.random()*3)]; addObj('block',l,z);
       for(let i=0;i<3;i++) addObj('coin',l,z+0.6+i*0.5); }
     else { for(let i=0;i<5;i++){ const l=LANES[Math.floor(Math.random()*3)]; addObj('coin',l,z+i*0.6); } }
   }
@@ -476,7 +477,7 @@
   }
 
   function update(dt){
-    speed=baseSpeed+dist*0.010; const dz=speed*dt;
+    speed=baseSpeed+Math.min(dist,3000)*0.005; const dz=speed*dt;
     dist+=dz*1.4; scroll=(scroll+dz)%2; P.run+=dz;
     P.px+=(P.lane-P.px)*Math.min(1,dt*19);
     // timers
@@ -496,7 +497,7 @@
     if(P.roll>0) P.roll-=dt;
 
     for(const o of obstacles) o.z-=dz;
-    spawnZ-=dz; if(spawnZ<=0){ spawnRow(26); spawnZ=Math.max(0.30,0.44-dist*0.00003)*speed; } // constant *time* gap
+    spawnZ-=dz; if(spawnZ<=0){ spawnRow(26,dist); spawnZ=Math.max(0.46,0.62-dist*0.00003)*speed; } // constant *time* gap
     // side scenery whooshes past
     for(const sc of scen) sc.z-=dz; scen=scen.filter(sc=>sc.z>-1.5);
     scenZ-=dz; if(scenZ<=0){ const side=Math.random()<.5?-1:1;
