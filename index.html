@@ -359,6 +359,7 @@
   // ================= GAME =================
   const LANES=[-1,0,1];
   let dist=0, runCoins=0, speed=0, baseSpeed=13, obstacles=[], parts=[], scroll=0, shake=0, flash=0, spawnZ=0;
+  let scen=[], scenZ=0;
   let runState='menu', runsThisRun=0;
   const P={lane:0,px:0,y:0,vy:0,roll:0,run:0,buf:0, magnet:0,jet:0,mult:0,sneak:0, inv:0, dead:false};
   let revives=0, milestone=0;
@@ -370,12 +371,27 @@
 
   const OBJ={train:{h:2.6,zlen:3.2},block:{h:.7,zlen:.6},gate:{h:1.0,zlen:.5},coin:{},
     magnet:{pw:'magnet'},jet:{pw:'jet'},mult:{pw:'mult'},sneak:{pw:'sneak'}};
-  function addObj(kind,lane,z){ obstacles.push({kind,lane,z,zlen:(OBJ[kind]&&OBJ[kind].zlen)||.6,hit:false,got:false}); }
+  function addObj(kind,lane,z,h){
+    if(kind!=='coin'&&obstacles.some(t=>t.kind==='train'&&t.lane===lane&&z>t.z-1.2&&z<t.z+t.zlen+1.2)) return; // never spawn inside a train
+    const o={kind,lane,z,h,zlen:(OBJ[kind]&&OBJ[kind].zlen)||.6,hit:false,got:false};
+    if(kind==='train'){ o.cars=2+Math.floor(Math.random()*3); o.zlen=o.cars*2.8; }   // 2-4 car trains
+    obstacles.push(o); }
+  // train roof height expressed in P.y jump units
+  const roofH=()=>OBJ.train.h*LANEPX()/(H*0.17);
+  // what the player is standing on right now (0 = street, roofH = on a train)
+  function groundH(){ const rh=roofH(); if(P.y<rh*0.55) return 0; const plane=Math.round(P.px);
+    for(const o of obstacles){ if(o.kind==='train'&&Math.abs(o.lane-plane)<0.5&&o.z<0.45&&o.z+o.zlen>-0.6) return rh; }
+    return 0; }
+  function dust(n,yUp){ const x=projX(0,P.px), y=projY(0,yUp||P.y);
+    for(let i=0;i<n;i++) parts.push({x:x+(Math.random()-.5)*30,y,vx:(Math.random()-.5)*140,vy:-Math.random()*90-20,life:.4,col:'#cfc2a8'}); }
   function spawnRow(z){
     const r=Math.random();
     if(r<0.06){ const k=['magnet','jet','mult','sneak'][Math.floor(Math.random()*4)]; addObj(k,LANES[Math.floor(Math.random()*3)],z); return; }
     if(r<0.26){ const bad=LANES[Math.floor(Math.random()*3)]; addObj('train',bad,z);
-      const safe=LANES.filter(l=>l!==bad)[Math.floor(Math.random()*2)]; for(let i=0;i<4;i++) addObj('coin',safe,z+i*0.7); }
+      const safe=LANES.filter(l=>l!==bad)[Math.floor(Math.random()*2)]; for(let i=0;i<4;i++) addObj('coin',safe,z+i*0.7);
+      const tr=obstacles[obstacles.length-1], rh=roofH();
+      if(tr&&tr.kind==='train'&&tr.z===z&&tr.lane===bad)
+        for(let i=0;i<Math.floor(tr.zlen/0.75);i++) addObj('coin',bad,z+0.5+i*0.75,rh+0.55); }   // roof route pays
     else if(r<0.48){ const n=Math.random()<.5?1:2; const ls=[...LANES].sort(()=>Math.random()-.5).slice(0,n);
       ls.forEach(l=>addObj('block',l,z)); const safe=LANES.find(l=>!ls.includes(l)); if(safe!==undefined)addObj('coin',safe,z); }
     else if(r<0.62){ LANES.forEach(l=>addObj('gate',l,z)); }
@@ -386,9 +402,9 @@
 
   function move(d){ const t=Math.max(0,Math.min(2,(P.lane+1)+d)); if(t!==P.lane+1){ P.lane=t-1; beep(620,.05,'triangle',.03,80); } }
   function jump(){ if(P.jet>0) return;
-    if(P.y<=0.01){ P.roll=0; P.vy=P.sneak>0?2.15:1.75; P.buf=0; sfx.jump(); missionProgress('jump',1); }
+    if(P.y<=groundH()+0.02){ P.roll=0; P.vy=P.sneak>0?2.68:2.18; P.buf=0; sfx.jump(); missionProgress('jump',1); }
     else P.buf=0.18; }                                    // airborne: buffer it, fire on landing
-  function roll(){ if(P.jet>0) return; if(P.y>0.01){ P.vy=-3.0; P.buf=0; } if(P.roll<=0){ P.roll=0.55; sfx.roll(); } }
+  function roll(){ if(P.jet>0) return; if(P.y>groundH()+0.02){ P.vy=-3.0; P.buf=0; } if(P.roll<=0){ P.roll=0.7; sfx.roll(); } }
   function grabPower(k){ P[k]=pwDur(k); sfx.power(); flash=.3; missionProgress('power',1);
     toast(POWERS[k].emoji+' '+POWERS[k].name);
     if(k==='jet'){ P.y=0; P.vy=0; for(let i=0;i<14;i++) addObj('coin',P.lane,4+i*0.9); } }
@@ -419,7 +435,7 @@
   addEventListener('pointercancel',()=>{ pd=null; });
 
   function startGame(){ try{ac().resume();}catch(e){}
-    dist=0; runCoins=0; speed=baseSpeed; obstacles=[]; parts=[]; scroll=0; shake=0; flash=0; spawnZ=24;
+    dist=0; runCoins=0; speed=baseSpeed; obstacles=[]; parts=[]; scroll=0; shake=0; flash=0; spawnZ=24; scen=[]; scenZ=0;
     P.lane=0;P.px=0;P.y=0;P.vy=0;P.roll=0;P.run=0;P.buf=0;P.magnet=0;P.jet=0;P.mult=0;P.sneak=0;P.inv=1.2;P.dead=false;
     revives=0; milestone=0;
     runState='play'; show('game'); missionProgress('runs',1); musicOn(); syncHudRun();
@@ -469,29 +485,46 @@
     if(dist>=milestone+500){ milestone+=500; flash=Math.max(flash,.18); toast(milestone+'m! keep going'); }
     // jet: fly high & invincible
     if(P.jet>0){ P.y+=(3.2-P.y)*Math.min(1,dt*5); P.vy=0; }
-    else { if(P.y>0||P.vy!==0){ P.vy-=(P.sneak>0?2.9:3.4)*dt; P.y+=P.vy*dt*2.2;
-        if(P.y<=0){ P.y=0; P.vy=0; if(P.buf>0){ P.buf=0; jump(); } } } }   // buffered jump fires on landing
+    else { const gH=groundH();
+      if(P.y>gH+0.001||P.vy>0){ const wasFalling=P.vy<-0.5;
+        P.vy-=(P.sneak>0?4.95:5.82)*dt; P.y+=P.vy*dt*2.2;
+        if(P.y<=gH&&P.vy<=0){ P.y=gH; P.vy=0;
+          if(wasFalling){ dust(6); beep(140,.07,'triangle',.05,-40); }
+          if(P.buf>0){ P.buf=0; jump(); } } }              // buffered jump fires on landing
+      else P.y=gH; }                                       // glued to street or roof
     if(P.buf>0) P.buf-=dt;
     if(P.roll>0) P.roll-=dt;
 
     for(const o of obstacles) o.z-=dz;
-    spawnZ-=dz; if(spawnZ<=0){ spawnRow(26); spawnZ=Math.max(3.4,5.6-dist*0.0012); }
+    spawnZ-=dz; if(spawnZ<=0){ spawnRow(26); spawnZ=Math.max(0.30,0.44-dist*0.00003)*speed; } // constant *time* gap
+    // side scenery whooshes past
+    for(const sc of scen) sc.z-=dz; scen=scen.filter(sc=>sc.z>-1.5);
+    scenZ-=dz; if(scenZ<=0){ const side=Math.random()<.5?-1:1;
+      scen.push({z:28,side,kind:Math.floor(Math.random()*3),v:Math.random()});
+      if(Math.random()<.55) scen.push({z:28.9,side:-side,kind:Math.floor(Math.random()*3),v:Math.random()});
+      scenZ=2.1; }
 
     const plane=Math.round(P.px);
     for(const o of obstacles){
-      if(o.z<-3){ o.done=true; continue; }
+      if(o.z+(o.kind==='train'?o.zlen:0)<-3){ o.done=true; continue; }   // trains live until their tail passes
       // magnet: pull nearby coins
-      if(o.kind==='coin' && !o.got && P.magnet>0 && o.z<6 && o.z>-1){ o.lane += (plane-o.lane)*Math.min(1,dt*6);
+      if(o.kind==='coin' && !o.got && P.magnet>0 && o.z<6 && o.z>-1 && Math.abs(((o.h!==undefined?o.h:.6)-.6)-P.y)<1.3){
+        o.lane += (plane-o.lane)*Math.min(1,dt*6);
         if(Math.abs(o.lane-plane)<0.15 && Math.abs(o.z)<1.2){ collectCoin(o); continue; } }
       // jet: vacuum coins in a stream
       if(o.kind==='coin' && !o.got && P.jet>0 && Math.abs(o.z)<0.6){ collectCoin(o); continue; }
       const front=o.z, back=o.z+o.zlen, band=front<0.55&&back>-0.35, same=o.lane===plane||Math.abs(o.lane-plane)<0.4;
-      if(o.kind==='coin'){ if(!o.got&&same&&Math.abs(o.z)<0.5&&P.y<1.6) collectCoin(o); }
+      if(o.kind==='coin'){ const base=(o.h!==undefined?o.h:.6)-.6;
+        if(!o.got&&same&&Math.abs(o.z)<0.5&&P.y>base-0.7&&P.y<base+1.6) collectCoin(o); }
       else if(POWERS[o.kind]){ if(!o.got&&same&&Math.abs(o.z)<0.6){ o.got=true;o.done=true; grabPower(o.kind); } }
       else if(band&&same&&!o.hit){
         if(P.jet>0||P.inv>0){ o.hit=true; continue; } // fly over / invincible
         const jumping=P.y>0.35, rolling=P.roll>0; let crash=false;
-        if(o.kind==='train') crash=true; else if(o.kind==='block') crash=!jumping; else if(o.kind==='gate') crash=!rolling;
+        if(o.kind==='train'){ const rh=roofH();
+          if(jumping||P.y>rh*0.55){ o.hit=true;                 // vault onto the roof!
+            P.y=Math.max(P.y,rh); if(P.vy<0)P.vy=0; dust(8,rh); beep(180,.08,'triangle',.06,-60); continue; }
+          crash=true; }
+        else if(o.kind==='block') crash=!jumping; else if(o.kind==='gate') crash=!rolling;
         if(crash){ o.hit=true; P.dead=true; endRun(); return; } else o.hit=true;
       }
       // near-miss: obstacle whips past in the neighbouring lane
@@ -506,7 +539,7 @@
     syncHudRun();
   }
   function collectCoin(o){ o.got=true;o.done=true; runCoins+=P.mult>0?2:1; dist+=2; sfx.coin(); missionProgress('coins',1);
-    const x=projX(0,o.lane),y=projY(0,.6); for(let i=0;i<5;i++) parts.push({x,y,vx:(Math.random()-.5)*100,vy:-Math.random()*120-30,life:.45,hue:46}); }
+    const x=projX(0,o.lane),y=projY(0,o.h!==undefined?o.h:.6); for(let i=0;i<5;i++) parts.push({x,y,vx:(Math.random()-.5)*100,vy:-Math.random()*120-30,life:.45,hue:46}); }
 
   // ---------- render ----------
   function render(dt, world){
@@ -515,9 +548,10 @@
     drawWorld();
     if(world){
       const sorted=[...obstacles].sort((a,b)=>b.z-a.z);
-      for(const o of sorted) drawObj(o);
+      for(const o of sorted) if(o.kind==='train') drawObj(o);   // trains first: coins/pickups float above roofs
+      for(const o of sorted) if(o.kind!=='train') drawObj(o);
       drawPlayer();
-      for(const p of parts){ ctx.globalAlpha=Math.max(0,p.life/.45); ctx.fillStyle=`hsl(${p.hue} 100% 60%)`;
+      for(const p of parts){ ctx.globalAlpha=Math.max(0,p.life/.45); ctx.fillStyle=p.col||`hsl(${p.hue} 100% 60%)`;
         ctx.beginPath(); ctx.arc(p.x,p.y,3,0,6.283); ctx.fill(); }
       ctx.globalAlpha=1;
       // speed lines when fast
@@ -552,12 +586,43 @@
     ctx.fillStyle=gg; ctx.fillRect(0,hz,W,H-hz);
     // lanes: two rails + sleepers converging
     const gy=GROUND(), lp=LANEPX();
+    // grass strips flanking the track
+    const ext=(H-hz)/(gy-hz), xl=W/2-1.5*lp*ext, xr=W/2+1.5*lp*ext;
+    const gr=ctx.createLinearGradient(0,hz,0,H); gr.addColorStop(0,'#a8d494'); gr.addColorStop(1,'#6fae5c');
+    ctx.fillStyle=gr;
+    ctx.beginPath(); ctx.moveTo(W/2,hz); ctx.lineTo(xl,H); ctx.lineTo(0,H); ctx.lineTo(0,hz); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(W/2,hz); ctx.lineTo(xr,H); ctx.lineTo(W,H); ctx.lineTo(W,hz); ctx.closePath(); ctx.fill();
     // sleepers
     for(let k=0;k<18;k++){ const z=(k*1.1 - scroll*0.55); if(z<0.02)continue; const s=scaleAt(z),y=projY(z,0),w=lp*1.7*s;
       ctx.fillStyle=`rgba(120,90,60,${0.35+0.4*s})`; ctx.fillRect(W/2-w,y-Math.max(1,3*s),w*2,Math.max(2,6*s)); }
     // rails (lane borders)
     for(let i=-1.5;i<=1.5;i++){ ctx.strokeStyle=(i%1===0)?'rgba(255,255,255,.35)':'#d8dde3'; ctx.lineWidth=(i%1===0)?2:4;
       if(i%1!==0){ ctx.strokeStyle='#e9edf2'; } ctx.beginPath(); ctx.moveTo(W/2+i*lp,gy); ctx.lineTo(W/2,hz); ctx.stroke(); }
+    drawScenery();
+  }
+  function drawScenery(){
+    const arr=[...scen].sort((a,b)=>b.z-a.z);
+    for(const sc of arr){ if(sc.z<0.05) continue;
+      const s=scaleAt(sc.z), x=projX(sc.z,sc.side*3.2), yb=projY(sc.z,0), u=LANEPX()*s;
+      if(sc.kind===0){ // pastel building
+        const bw=u*(1.1+sc.v*0.7), bh=u*(2.2+sc.v*2.4);
+        const hues=['#ffb27d','#8fd0a0','#a5b8e8','#e8a5c8','#ffd98a'];
+        ctx.fillStyle=hues[Math.floor(sc.v*5)%5]; ctx.fillRect(x-bw/2,yb-bh,bw,bh);
+        ctx.fillStyle='rgba(0,0,0,.10)'; ctx.fillRect(x-bw/2,yb-bh,bw*0.2,bh);
+        ctx.fillStyle='rgba(255,255,255,.6)';
+        const rows=Math.max(1,Math.floor(bh/(u*0.55)));
+        for(let r2=0;r2<rows;r2++) for(let c2=0;c2<2;c2++)
+          ctx.fillRect(x-bw/2+bw*0.2+c2*bw*0.4, yb-bh+u*0.25+r2*u*0.55, bw*0.18, u*0.26);
+      } else if(sc.kind===1){ // tree
+        ctx.fillStyle='#8a6a48'; ctx.fillRect(x-u*0.07,yb-u*0.85,u*0.14,u*0.85);
+        ctx.fillStyle='#5bbf6e'; ctx.beginPath();
+        ctx.arc(x,yb-u*1.05,u*0.44,0,6.283); ctx.arc(x-u*0.27,yb-u*0.78,u*0.3,0,6.283); ctx.arc(x+u*0.27,yb-u*0.78,u*0.3,0,6.283); ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,.22)'; ctx.beginPath(); ctx.arc(x-u*0.13,yb-u*1.16,u*0.16,0,6.283); ctx.fill();
+      } else { // lamppost
+        ctx.strokeStyle='#5a6a80'; ctx.lineWidth=Math.max(1.5,u*0.08); ctx.lineCap='round';
+        ctx.beginPath(); ctx.moveTo(x,yb); ctx.lineTo(x,yb-u*1.8); ctx.lineTo(x-sc.side*u*0.35,yb-u*1.8); ctx.stroke();
+        ctx.fillStyle='#ffd98a'; ctx.beginPath(); ctx.arc(x-sc.side*u*0.35,yb-u*1.75,u*0.11,0,6.283); ctx.fill();
+      } }
   }
   function cloud(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.arc(x+r,y+6,r*0.8,0,6.283); ctx.arc(x-r,y+8,r*0.7,0,6.283);
     ctx.arc(x+r*0.4,y-r*0.5,r*0.7,0,6.283); ctx.fill(); }
@@ -566,8 +631,9 @@
     ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath(); }
 
   function drawObj(o){
+    if(o.kind==='train'){ drawTrain(o); return; }
     if(o.z<0.02) return; const s=scaleAt(o.z), x=projX(o.z,o.lane), yb=projY(o.z,0), unit=LANEPX()*s;
-    if(o.kind==='coin'){ const r=unit*0.17,y=projY(o.z,.6), sp=Math.abs(Math.sin(performance.now()/170+o.z));
+    if(o.kind==='coin'){ const r=unit*0.17,y=projY(o.z,o.h!==undefined?o.h:.6), sp=Math.abs(Math.sin(performance.now()/170+o.z));
       ctx.save(); ctx.translate(x,y); ctx.fillStyle='#e0a11a'; ctx.beginPath(); ctx.ellipse(0,0,r*(.3+.7*sp),r,0,0,6.283); ctx.fill();
       ctx.fillStyle='#ffcf3f'; ctx.beginPath(); ctx.ellipse(0,0,r*(.3+.7*sp)*.8,r*.8,0,0,6.283); ctx.fill();
       ctx.fillStyle='#fff2a8'; ctx.beginPath(); ctx.ellipse(-r*.15,-r*.2,r*.2,r*.3,0,0,6.283); ctx.fill(); ctx.restore(); return; }
@@ -576,13 +642,6 @@
       ctx.strokeStyle=POWERS[o.kind].color; ctx.lineWidth=Math.max(2,r*0.18); ctx.stroke();
       ctx.font=`900 ${r*1.1}px Segoe UI`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#222';
       ctx.fillText(POWERS[o.kind].emoji,0,1); ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.restore(); return; }
-    if(o.kind==='train'){ const w=unit*0.74,h=OBJ.train.h*unit,yTop=yb-h; const cols=['#e64b4b','#2d8cf0','#37c24a']; const col=cols[(o.lane+1)%3];
-      ctx.save(); ctx.fillStyle=col; roundRect(x-w,yTop,w*2,h,8*s); ctx.fill();
-      ctx.fillStyle='rgba(0,0,0,.15)'; roundRect(x-w,yTop,w*2,h*0.16,8*s); ctx.fill();
-      ctx.fillStyle='#cfe8ff'; roundRect(x-w*0.7,yTop+h*0.16,w*1.4,h*0.2,4*s); ctx.fill(); // windshield
-      ctx.fillStyle='#1c2b46'; ctx.fillRect(x-w*0.8,yTop+h*0.5,w*1.6,h*0.06);
-      ctx.fillStyle='#ffd23e'; ctx.fillRect(x-w*0.5,yb-h*0.12,w*0.2,h*0.08); ctx.fillRect(x+w*0.3,yb-h*0.12,w*0.2,h*0.08);
-      ctx.restore(); return; }
     if(o.kind==='block'){ const w=unit*0.6,h=OBJ.block.h*unit,yTop=yb-h; ctx.save();
       ctx.fillStyle='#ff5a5a'; roundRect(x-w,yTop,w*2,h,5*s); ctx.fill();
       ctx.fillStyle='#fff'; for(let i=0;i<4;i++) ctx.fillRect(x-w+i*(w*0.55),yTop,w*0.28,h); ctx.restore(); return; }
@@ -590,6 +649,37 @@
       ctx.fillStyle='#ffcf3f'; ctx.fillRect(x-w,yTop,w*2,bar);
       ctx.fillStyle='#1c2b46'; for(let i=0;i<6;i++) if(i%2) ctx.fillRect(x-w+i*(w/3),yTop,w/3,bar);
       ctx.fillStyle='#7a8aa5'; ctx.fillRect(x-w,yTop,bar*0.4,h); ctx.fillRect(x+w-bar*0.4,yTop,bar*0.4,h); ctx.restore(); return; }
+  }
+
+  function drawTrain(o){
+    const zF=Math.max(o.z,0.05), zB=o.z+o.zlen;
+    if(zB<0.3) return;                                       // fully passed
+    const sF=scaleAt(zF), sB=scaleAt(zB);
+    const xF=projX(zF,o.lane), xB=projX(zB,o.lane);
+    const ybF=projY(zF,0), ybB=projY(zB,0);
+    const wF=LANEPX()*sF*0.74, wB=LANEPX()*sB*0.74;
+    const hF=OBJ.train.h*LANEPX()*sF, hB=OBJ.train.h*LANEPX()*sB;
+    const cols=['#e64b4b','#2d8cf0','#37c24a'], col=cols[(o.lane+1)%3];
+    ctx.save();
+    // roof: trapezoid from near top edge to far top edge
+    ctx.fillStyle='#e9eef4';
+    ctx.beginPath(); ctx.moveTo(xF-wF,ybF-hF); ctx.lineTo(xF+wF,ybF-hF);
+    ctx.lineTo(xB+wB,ybB-hB); ctx.lineTo(xB-wB,ybB-hB); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,.12)'; ctx.lineWidth=1.5; ctx.stroke();
+    // car-boundary lines across the roof
+    for(let c=1;c<(o.cars||1);c++){ const zc=o.z+c*2.8; if(zc<0.06) continue;
+      const sc2=scaleAt(zc), xc=projX(zc,o.lane), yc=projY(zc,0)-OBJ.train.h*LANEPX()*sc2, wc=LANEPX()*sc2*0.74;
+      ctx.beginPath(); ctx.moveTo(xc-wc,yc); ctx.lineTo(xc+wc,yc); ctx.stroke(); }
+    // roof centre stripe
+    ctx.strokeStyle='rgba(0,0,0,.08)'; ctx.lineWidth=Math.max(1,4*sF);
+    ctx.beginPath(); ctx.moveTo(xF,ybF-hF+hF*0.04); ctx.lineTo(xB,ybB-hB+hB*0.04); ctx.stroke();
+    // near face (rear of train, facing the player)
+    ctx.fillStyle=col; roundRect(xF-wF,ybF-hF,wF*2,hF,8*sF); ctx.fill();
+    ctx.fillStyle='rgba(0,0,0,.14)'; roundRect(xF-wF,ybF-hF*0.34,wF*2,hF*0.34,6*sF); ctx.fill();
+    ctx.fillStyle='#cfe8ff'; roundRect(xF-wF*0.7,ybF-hF*0.84,wF*1.4,hF*0.22,4*sF); ctx.fill();  // window
+    ctx.fillStyle='#1c2b46'; ctx.fillRect(xF-wF*0.8,ybF-hF*0.5,wF*1.6,hF*0.06);
+    ctx.fillStyle='#ffd23e'; ctx.fillRect(xF-wF*0.5,ybF-hF*0.12,wF*0.2,hF*0.08); ctx.fillRect(xF+wF*0.3,ybF-hF*0.12,wF*0.2,hF*0.08);
+    ctx.restore();
   }
 
   function drawPlayer(){
@@ -606,6 +696,7 @@
     const blink = P.inv>0 && Math.floor(P.inv*12)%2;
     ctx.globalAlpha = blink?0.45:1;
     ctx.save(); ctx.translate(x,yb);
+    ctx.rotate((P.lane-P.px)*0.45 - (P.jet>0?0:Math.max(-0.14,Math.min(0.14,P.vy*0.05)))); // lean into moves
     // board
     ctx.fillStyle=b.color; roundRect(-w*1.25,-4,w*2.5,10,5); ctx.fill();
     ctx.fillStyle='rgba(255,255,255,.4)'; ctx.fillRect(-w*1.25,-4,w*2.5,3);
