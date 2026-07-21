@@ -52,6 +52,10 @@
     box-shadow:0 7px 0 #1f8a33,0 12px 20px rgba(0,0,0,.25);animation:bob 1.6s ease-in-out infinite}
   @keyframes bob{50%{transform:translateY(-5px)}}
   .play:active{transform:translateY(4px);box-shadow:0 3px 0 #1f8a33}
+  .diffRow{display:flex;gap:6px;margin-top:10px}
+  .diffRow button{border:0;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:800;letter-spacing:.5px;
+    background:rgba(255,255,255,.55);color:#5a6a85;cursor:pointer}
+  .diffRow button.on{background:#2d8cf0;color:#fff;box-shadow:0 3px 0 #1b6fd6}
   .charcard{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.75);border-radius:18px;padding:8px 14px;
     box-shadow:0 4px 0 rgba(0,0,0,.12)}
   .charcard .nm{font-weight:900;font-size:16px}
@@ -128,6 +132,9 @@
     <div class="charcard"><div class="av" id="homeAv" style="width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-size:30px"></div>
       <div><div class="nm" id="homeName">Dash</div><div class="sc">Top run <span id="homeTop">0</span></div></div></div>
     <button class="play" id="playBtn">TAP TO PLAY</button>
+    <div class="diffRow" id="diffRow">
+      <button data-d="easy">EASY</button><button data-d="normal">NORMAL</button><button data-d="hard">HARD</button>
+    </div>
   </div>
   <div class="nav">
     <button id="navShop"><span class="ic">🛒</span>SHOP</button>
@@ -193,12 +200,22 @@
     daily:localStorage.getItem('md_daily')||'',
     streak:+(localStorage.getItem('md_streak')||0),
     missions:JSON.parse(localStorage.getItem('md_missions')||'null'),
+    difficulty:localStorage.getItem('md_difficulty')||'easy',
   };
   function save(){ localStorage.setItem('md_coins',DB.coins);localStorage.setItem('md_high',DB.high);
     localStorage.setItem('md_top',DB.top);localStorage.setItem('md_char',DB.char);localStorage.setItem('md_board',DB.board);
     localStorage.setItem('md_ownedC',JSON.stringify(DB.ownedC));localStorage.setItem('md_ownedB',JSON.stringify(DB.ownedB));
     localStorage.setItem('md_pw',JSON.stringify(DB.pw));localStorage.setItem('md_daily',DB.daily);
-    localStorage.setItem('md_streak',DB.streak);localStorage.setItem('md_missions',JSON.stringify(DB.missions)); }
+    localStorage.setItem('md_streak',DB.streak);localStorage.setItem('md_missions',JSON.stringify(DB.missions));
+    localStorage.setItem('md_difficulty',DB.difficulty); }
+
+  // ---------- difficulty ----------
+  const DIFF = {
+    easy:   { base:6.5, ramp:0.0022, gapStart:0.95, gapFloor:0.72, onramp:350, dbl:0,   gate:false },
+    normal: { base:9,   ramp:0.0042, gapStart:0.70, gapFloor:0.52, onramp:200, dbl:0.2, gate:true  },
+    hard:   { base:13,  ramp:0.010,  gapStart:0.44, gapFloor:0.30, onramp:60,  dbl:0.5, gate:true  },
+  };
+  function diff(){ return DIFF[DB.difficulty] || DIFF.easy; }
 
   // ---------- catalogs ----------
   const CHARS=[
@@ -279,6 +296,9 @@
     el('homeAv').style.background=c.jacket; }
 
   // ---------- home / nav ----------
+  function refreshDiffRow(){ document.querySelectorAll('#diffRow button').forEach(b=>b.classList.toggle('on',b.dataset.d===DB.difficulty)); }
+  document.querySelectorAll('#diffRow button').forEach(b=>b.onclick=()=>{ DB.difficulty=b.dataset.d; save(); refreshDiffRow(); beep(500,.05,'triangle',.03,60); });
+  refreshDiffRow();
   el('playBtn').onclick=()=>startGame();
   el('navShop').onclick=()=>{ buildShop('char'); show('shop'); };
   el('navChar').onclick=()=>{ buildShop('char'); show('shop'); };
@@ -358,7 +378,7 @@
 
   // ================= GAME =================
   const LANES=[-1,0,1];
-  let dist=0, runCoins=0, speed=0, baseSpeed=10, obstacles=[], parts=[], scroll=0, shake=0, flash=0, spawnZ=0;
+  let dist=0, runCoins=0, speed=0, obstacles=[], parts=[], scroll=0, shake=0, flash=0, spawnZ=0;
   let scen=[], scenZ=0;
   let runState='menu', runsThisRun=0;
   const P={lane:0,px:0,y:0,vy:0,roll:0,run:0,buf:0, magnet:0,jet:0,mult:0,sneak:0, inv:0, dead:false};
@@ -385,7 +405,7 @@
   function dust(n,yUp){ const x=projX(0,P.px), y=projY(0,yUp||P.y);
     for(let i=0;i<n;i++) parts.push({x:x+(Math.random()-.5)*30,y,vx:(Math.random()-.5)*140,vy:-Math.random()*90-20,life:.4,col:'#cfc2a8'}); }
   function spawnRow(z,dist){
-    const easy = dist<150;                                 // gentle on-ramp: no trains/double-blocks at first
+    const d=diff(); const easy = dist<d.onramp;            // gentle on-ramp: no trains/double-blocks/gate-walls at first
     const r=Math.random();
     if(r<0.08){ const k=['magnet','jet','mult','sneak'][Math.floor(Math.random()*4)]; addObj(k,LANES[Math.floor(Math.random()*3)],z); return; }
     if(!easy && r<0.24){ const bad=LANES[Math.floor(Math.random()*3)]; addObj('train',bad,z);
@@ -393,9 +413,9 @@
       const tr=obstacles[obstacles.length-1], rh=roofH();
       if(tr&&tr.kind==='train'&&tr.z===z&&tr.lane===bad)
         for(let i=0;i<Math.floor(tr.zlen/0.75);i++) addObj('coin',bad,z+0.5+i*0.75,rh+0.55); }   // roof route pays
-    else if(r<0.46){ const n=(!easy&&Math.random()<.3)?2:1; const ls=[...LANES].sort(()=>Math.random()-.5).slice(0,n);
+    else if(r<0.46){ const n=(!easy&&Math.random()<d.dbl)?2:1; const ls=[...LANES].sort(()=>Math.random()-.5).slice(0,n);
       ls.forEach(l=>addObj('block',l,z)); const safe=LANES.find(l=>!ls.includes(l)); if(safe!==undefined)addObj('coin',safe,z); }
-    else if(r<0.58){ LANES.forEach(l=>addObj('gate',l,z)); }
+    else if(!easy && d.gate && r<0.58){ LANES.forEach(l=>addObj('gate',l,z)); }
     else if(r<0.80){ const l=LANES[Math.floor(Math.random()*3)]; addObj('block',l,z);
       for(let i=0;i<3;i++) addObj('coin',l,z+0.6+i*0.5); }
     else { for(let i=0;i<5;i++){ const l=LANES[Math.floor(Math.random()*3)]; addObj('coin',l,z+i*0.6); } }
@@ -436,7 +456,7 @@
   addEventListener('pointercancel',()=>{ pd=null; });
 
   function startGame(){ try{ac().resume();}catch(e){}
-    dist=0; runCoins=0; speed=baseSpeed; obstacles=[]; parts=[]; scroll=0; shake=0; flash=0; spawnZ=24; scen=[]; scenZ=0;
+    dist=0; runCoins=0; speed=diff().base; obstacles=[]; parts=[]; scroll=0; shake=0; flash=0; spawnZ=24; scen=[]; scenZ=0;
     P.lane=0;P.px=0;P.y=0;P.vy=0;P.roll=0;P.run=0;P.buf=0;P.magnet=0;P.jet=0;P.mult=0;P.sneak=0;P.inv=1.2;P.dead=false;
     revives=0; milestone=0;
     runState='play'; show('game'); missionProgress('runs',1); musicOn(); syncHudRun();
@@ -477,7 +497,7 @@
   }
 
   function update(dt){
-    speed=baseSpeed+Math.min(dist,3000)*0.005; const dz=speed*dt;
+    const d=diff(); speed=d.base+Math.min(dist,3000)*d.ramp; const dz=speed*dt;
     dist+=dz*1.4; scroll=(scroll+dz)%2; P.run+=dz;
     P.px+=(P.lane-P.px)*Math.min(1,dt*19);
     // timers
@@ -497,7 +517,7 @@
     if(P.roll>0) P.roll-=dt;
 
     for(const o of obstacles) o.z-=dz;
-    spawnZ-=dz; if(spawnZ<=0){ spawnRow(26,dist); spawnZ=Math.max(0.46,0.62-dist*0.00003)*speed; } // constant *time* gap
+    spawnZ-=dz; if(spawnZ<=0){ spawnRow(26,dist); spawnZ=Math.max(d.gapFloor,d.gapStart-dist*0.00003)*speed; } // constant *time* gap
     // side scenery whooshes past
     for(const sc of scen) sc.z-=dz; scen=scen.filter(sc=>sc.z>-1.5);
     scenZ-=dz; if(scenZ<=0){ const side=Math.random()<.5?-1:1;
